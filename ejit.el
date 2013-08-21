@@ -1,3 +1,6 @@
+;;; ejit.el - a javascript compiler for emacs-lisp -*- lexical-binding: t -*-
+
+(require 'cl-lib)
 
 (cl-defmacro macroexpand-all-locally (form &environment env)
   "Macroexpand things made with macrolet."
@@ -39,14 +42,14 @@
       ((listp e) (ejit/translate e))
       ((case e
          ('apply (format "(%s)();" (ejit/translate next)))
-         ('FUNCTION (destructuring-bind (name defn rest)
+         ('FUNCTION (cl-destructuring-bind (name defn rest)
                         (if (stringp (car next))
-                               (list (car next) (cdr next) '())
-                               (list "" next '()))
-                         (format "function %s (%s) { %s }"
-                                 name
-                                 (mapconcat 'symbol-name (car defn) ",")
-                                 (ejit/translate (cdr defn)))))))
+                            (list (car next) (cdr next) '())
+                            (list "" next '()))
+                      (format "function %s (%s) { %s }"
+                              name
+                              (mapconcat 'symbol-name (car defn) ",")
+                              (ejit/translate (cdr defn)))))))
       ((atom e)
        (format "%s (%s)" e
                (if (not next) ""
@@ -70,14 +73,6 @@ Also returns the trace log."
       debug-added)))
 
 
-(flet ((myfunc (a)
-         (* 20 a)))
-  (let ((a 1)
-        (b '(10)))
-    (* (+ a (car b)) 2)))
-
-
-;; (nic-prefix->infix '(+ 1 2) '(+ - * /))
-
+;;; ejit.el ends here
 
 

@@ -1,0 +1,46 @@
+= Ejit - a javascript compiler for EmacsLisp =
+
+Everyone's making compilers for Javascript these days, it's the new
+assembly language.
+
+Elnode makes building webapps in Emacs relatively easy. But you still
+need to write a lot of Javascript. A lot of Javascript is boiler plate
+nonsense and can be mostly strung together with lots of little
+librarys. But it's still very tedious to do that. So I've written
+Ejit, to make it possible to build an entirely EmacsLisp webapp.
+
+Ejit takes EmacsLisp and compiles it to Javascript.
+
+Here's some example EmacsLisp:
+
+{{{
+(flet ((myfunc (a)
+         (* 20 a)))
+  (let ((a 1)
+        (b '(10)))
+    (* (+ a (car b)) 2)))
+}}}
+
+And here is the resulting Javascript:
+
+{{{
+(function  (myfunc) { 
+   (function  (a,b) { 
+     MULT (PLUS (a, car (b)), 2) 
+   })(); 
+})();
+}}}
+
+Note that there's also the start of an EmacsLisp kernel, which has to
+be done in Javascript, and makes things like CAR and MULT and PLUS
+available.
+
+No bridge exists to any other Javascript right now but neither is the
+//compiler// doing any checking that functions exist or do not exist,
+so it should be easy to make the Emacs-Lisp call a Javascript
+function.
+
+I intend to build a testing framework for this using Elnode so that
+you can write your EmacsLisp for the browser and get feedback on
+whether it's working or not.
+

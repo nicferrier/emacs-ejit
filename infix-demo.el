@@ -30,4 +30,9 @@
           (insert-between (rest in-expr) (first in-expr))))))
 
 
+
+
+;; (nic-prefix->infix '(+ 1 2) '(+ - * /))
+
+
 ;;; infix-demo.el ends here
