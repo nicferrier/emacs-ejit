@@ -24,11 +24,12 @@ Here's some example EmacsLisp:
 And here is the resulting Javascript:
 
 {{{
-(function  (myfunc) { 
-   (function  (a,b) { 
-     MULT (PLUS (a, car (b)), 2) 
-   })(); 
-})();
+(function (myfunc) { 
+  (function (a,b) { 
+     MULT(PLUS(a, car(b)), 2) })(1, [10]) 
+   })(function (a) { 
+        MULT(20, a) 
+      })
 }}}
 
 Note that there's also the start of an EmacsLisp kernel, which has to
@@ -44,3 +45,5 @@ I intend to build a testing framework for this using Elnode so that
 you can write your EmacsLisp for the browser and get feedback on
 whether it's working or not.
 
+The next step though is to have some sort of offline test of the
+output using nodejs.
