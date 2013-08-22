@@ -33,6 +33,14 @@
   "Print FORM as EjitLisp."
   (print (ejit/lisp->ejitlisp form) (current-buffer)))
 
+(defun ejit/expr-map (lst)
+  (mapconcat
+   (lambda (f)
+     (if (atom f)
+         (format "%s" f)
+         (ejit/translate f)))
+   lst ", "))
+
 (defun ejit/translate (ejit-form)
   "Translate EjitLisp to JS."
   (let ((e (car ejit-form))
@@ -40,44 +48,30 @@
     (push (list (format "%S {%s}" ejit-form e)) ejit/trace-log)
     (cond
       ((listp e) (ejit/translate e))
-      ((case e
-         ('apply (format
-                  "(%s)(%s)"
-                  (ejit/translate (car next))
-                  (if (cdr next)
-                      (mapconcat
-                       (lambda (f)
-                         (if (atom f)
-                             (format "%s" f)
-                             (ejit/translate f))) (cdadr next) ", ")
-                      "")))
-         ('quote (if (and (lisp next)
-                          (listp (car next)))
-                     (format
-                      "[%s]"
-                      (mapconcat
-                       (lambda (f)
-                         (if (atom f)
-                             (format "%s" f)
-                             (ejit/translate f))) (cdr next) ", "))
-                     ""))
-         ('FUNCTION (cl-destructuring-bind (name defn rest)
-                        (if (stringp (car next))
-                            (list (car next) (cdr next) '())
-                            (list "" next '()))
-                      (format "function %s(%s) { %s }"
-                              name
-                               (mapconcat 'symbol-name (car defn) ",")
-                               (ejit/translate (cdr defn)))))))
+      ((eq e 'apply)
+       (format "(%s)(%s)"
+               (ejit/translate (car next))
+               (if (cdr next) (ejit/expr-map (cdadr next)) "")))
+      ;;((eq e 'list)  ())
+      ((eq e 'quote)
+       (cond
+         ((and (listp next)(listp (car next)))
+          (format "[%s]" (ejit/expr-map (car next))))
+         (t "")))
+      ((eq e 'FUNCTION)
+       (cl-destructuring-bind (name defn rest)
+           (if (stringp (car next))
+               (list (car next) (cdr next) '())
+               (list "" next '()))
+         (format "function %s(%s) { %s }"
+                 name
+                 (mapconcat 'symbol-name (car defn) ",")
+                 (ejit/translate (cdr defn)))))
       ((numberp e) (format "%d" e))
       ((atom e)
        (format "%s (%s)" e
                (if (not next) ""
-                   (mapconcat
-                    (lambda (f)
-                      (if (atom f)
-                          (format "%s" f)
-                          (ejit/translate f))) next ", ")))))))
+                   (ejit/expr-map next)))))))
 
 (defun ejit-compile (form &optional insert)
   "Return Javascript for FORM.
