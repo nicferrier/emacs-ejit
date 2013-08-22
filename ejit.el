@@ -26,7 +26,7 @@
        (* (&rest lst) `(MULT ,@lst))
        (/ (&rest lst) `(DIVIDE ,@lst))
        (function (l-expr) `(FUNCTION ,@(cdr l-expr)))
-       (unwind-protect (form handler) `(TRY ,form CATCH ,handler)))
+       (unwind-protect (form handler) `(TRYCATCH ,form ,handler)))
     (macroexpand-all-locally form)))
 
 (defun ejit/print (form)
@@ -34,6 +34,7 @@
   (print (ejit/lisp->ejitlisp form) (current-buffer)))
 
 (defun ejit/expr-map (lst)
+  "Make the LST of forms a comma separated JS expression list."
   (mapconcat
    (lambda (f)
      (if (atom f)
@@ -52,24 +53,30 @@
        (format "(%s)(%s)"
                (ejit/translate (car next))
                (if (cdr next) (ejit/expr-map (cdadr next)) "")))
-      ;;((eq e 'list)  ())
+      ((eq e 'list)
+       (format "[%s]" (ejit/expr-map next)))
       ((eq e 'quote)
        (cond
          ((and (listp next)(listp (car next)))
           (format "[%s]" (ejit/expr-map (car next))))
+         ((and (listp next)(atom (car next))) ; not convinced about this rule
+          (format "\"%s\"" (car next)))
          (t "")))
+      ((eq e 'TRYCATCH)
+       (format "try { %s } catch (e) { %s}"
+               (ejit/translate (car next))
+               (ejit/translate (cadr next))))
       ((eq e 'FUNCTION)
        (cl-destructuring-bind (name defn rest)
            (if (stringp (car next))
                (list (car next) (cdr next) '())
                (list "" next '()))
-         (format "function %s(%s) { %s }"
-                 name
+         (format "function %s(%s) { %s }" name
                  (mapconcat 'symbol-name (car defn) ",")
                  (ejit/translate (cdr defn)))))
       ((numberp e) (format "%d" e))
       ((atom e)
-       (format "%s (%s)" e
+       (format "%s(%s)" e
                (if (not next) ""
                    (ejit/expr-map next)))))))
 
