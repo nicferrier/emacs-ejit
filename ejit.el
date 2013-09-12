@@ -42,6 +42,10 @@
          (ejit/translate f)))
    lst ", "))
 
+(defconst ejit/builtin-functions
+  '(car cdr cons MULT DIVIDE PLUS MINUS)
+  "List of functions that are built in to Ejit via JS.")
+
 (defun ejit/translate (ejit-form)
   "Translate EjitLisp to JS."
   (let ((e (car ejit-form))
@@ -76,7 +80,10 @@
                  (ejit/translate (cdr defn)))))
       ((numberp e) (format "%d" e))
       ((atom e)
-       (format "%s(%s)" e
+       (format "%s(%s)"
+               (-if-let (builtin (member e ejit/builtin-functions))
+                 (format "ejit.%s" (car builtin))
+                 e)
                (if (not next) ""
                    (ejit/expr-map next)))))))
 
