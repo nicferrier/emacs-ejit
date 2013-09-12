@@ -3,8 +3,8 @@
 (ert-deftest ejit/tanslate ()
   (should
    (equal
-    (ejit/translate '(MULT (PLUS a (car b)) 2))
-    "MULT (PLUS (a, car (b)), 2)"))
+    (ejit/translate '(MULT(PLUS a (car b)) 2))
+    "MULT(PLUS(a, car(b)), 2)"))
   (should (equal (ejit/translate '(quote (1 2 3))) "[1, 2, 3]"))
   (should (equal (ejit-compile '(quote (1 2 3))) "[1, 2, 3]"))
   ;; not sure about this rule
@@ -17,7 +17,7 @@
   (should (equal
            (ejit/translate
             '(TRYCATCH (PLUS 10 20) (MULT 2 20)))
-           "try { PLUS(10, 20) } catch(e) { MULT(2, 20)}")))
+           "try { PLUS(10, 20) } catch (e) { MULT(2, 20)}")))
 
 (defun ejit/scratch ()
   "a bunch of scratchy working out stuff."
