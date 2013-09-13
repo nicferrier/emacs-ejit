@@ -1,5 +1,8 @@
 ;;; tests for ejit
 
+(require 's)
+(require 'ejit)
+
 (defun ejit/scratch ()
   "a bunch of scratchy working out stuff."
   (ejit/lisp->ejitlisp
