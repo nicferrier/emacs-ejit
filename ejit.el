@@ -87,6 +87,9 @@
                (if (not next) ""
                    (ejit/expr-map next)))))))
 
+(defvar ejit-compile-frame "var ejit = require('ejit.js');\n"
+  "The Javascript that will be used to preceed the compiled js.")
+
 (defun ejit-compile (form &optional insert)
   "Return Javascript for FORM.
 
@@ -96,9 +99,14 @@ Also returns the trace log."
          current-prefix-arg))
   (let ((ejit/trace-log '()))
     (let* ((js (ejit/translate (ejit/lisp->ejitlisp form)))
-           (debug-added (propertize js :trace (copy-list ejit/trace-log))))
-      (when insert (insert (format "%s" debug-added)))
-      debug-added)))
+           (debug-added (propertize js :trace (copy-list ejit/trace-log)))
+           (full-js
+            (if ejit-compile-frame
+                (concat ejit-compile-frame debug-added)
+                debug-added)))
+      (when insert (insert (format "%s" full-js)))
+      full-js)))
+
 
 
 ;;; ejit.el ends here
