@@ -46,8 +46,7 @@
        ((eq f t) "true")
        ((stringp f)(format "%S" f))
        ((atom f) (format "%s" f))
-       (t 
-        (ejit/translate f))))
+       ((listp f) (ejit/translate f))))
    lst (or sep ", ")))
 
 (defconst ejit/builtin-functions
@@ -63,7 +62,7 @@
         (next (cdr ejit-form)))
     (push (list (format "%S {%s}" ejit-form e)) ejit/trace-log)
     (cond
-      ((listp e) (ejit/translate e))
+      ((listp e) (format "(%s)" (ejit/translate e)))
       ((eq e 'apply)
        (format "(%s)(%s)"
                (ejit/translate (car next))
@@ -95,18 +94,18 @@
                (list "" next '()))
          (format "function %s(%s) { %s }" name
                  (mapconcat 'symbol-name (car defn) ",")
-                 (ejit/translate (cdr defn)))))
+                 (ejit/expr-map (cdr defn) ";")
+                 ;;(ejit/translate (cdr defn))
+                 )))
       ((numberp e) (format "%d" e))
       ((atom e)
-       (format "%s(%s)"
-               (-if-let (builtin (member e ejit/builtin-functions))
-                 ;; Builtins are upcase converted but otherwise no different
-                 (format "ejit.%s" (upcase (format "%s" (car builtin))))
-                 (-if-let (defined (member e ejit/function-space))
-                   (format "ejit.%s" (car defined))
-                   (format "%s" e)))
-               (if (not next) ""
-                   (ejit/expr-map next)))))))
+       (format
+        "%s(%s)"
+        (-if-let (builtin (member e ejit/builtin-functions))
+          ;; Builtins are upcase converted but otherwise no different
+          (format "ejit.%s" (upcase (format "%s" (car builtin))))
+          (format "ejit.%s" e))
+        (if next (ejit/expr-map next) ""))))))
 
 (defvar ejit-compile-frame "var ejit = require('ejit.js');
 console.log(

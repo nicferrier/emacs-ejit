@@ -12,6 +12,9 @@
            (b '(10)))
        (* (+ a (car b)) 2))))
 
+  (ejit/translate (ejit/lisp->ejitlisp '(let ((y 10)) y)))
+  ;; => ((function (y) y) 10)
+
   (let ((ejit/trace-log ()))
     (ejit/translate
      '(apply
@@ -23,14 +26,14 @@
        (list (FUNCTION (a) (MULT 20 a)))))
     (print ejit/trace-log (current-buffer)))
 
-
-  (let (ejit/trace-log
-        ejit/function-space)
+  (let (ejit/trace-log)
     (print
-     (list
-      (ejit/translate '(DEFUNC nic-test (a b) (progn (+ a b))))
-      (ejit/translate '(nic-test 10 11))
-      ejit/function-space) (current-buffer)))
+     (let (ejit/function-space)
+       (list
+        (ejit/translate (ejit/lisp->ejitlisp '(defun nic-test (a b)  (+ a b))))
+        (ejit/translate '(nic-test 10 11)))
+        ejit/function-space))
+     (current-buffer))
 
   (let ((ejit/trace-log ()))
     (ejit/translate
@@ -43,7 +46,7 @@
     (should
      (equal
       (ejit/translate '(MULT(PLUS a (car b)) 2))
-      "ejit.MULT(ejit.PLUS(a, ejit.car(b)), 2)"))
+      "ejit.MULT(ejit.PLUS(a, ejit.CAR(b)), 2)"))
     (should (equal (ejit/translate '(quote (1 2 3))) "[1, 2, 3]"))
     (should (equal (ejit-compile '(quote (1 2 3))) "[1, 2, 3]"))
     ;; not sure about this rule
@@ -71,7 +74,7 @@
       (s-collapse-whitespace
        (concat "(function (myfunc) {
  (function (a,b) {
- ejit.MULT(ejit.PLUS(a, ejit.car(b)), 2) })(1, [10])
+ ejit.MULT(ejit.PLUS(a, ejit.CAR(b)), 2) })(1, [10])
  })(function (a) { ejit.MULT(20, a) })"))
       ))))
 
