@@ -18,6 +18,18 @@ exports.CDR = function (cons) {
     return cons.cdr;
 };
 
+exports.CADR = function (cons) {
+    return cons.cdr.car;
+}
+
+exports.CADDR = function (cons) {
+    return cons.cdr.cdr.car;
+}
+
+exports.CADDDR = function (cons) {
+    return cons.cdr.cdr.cdr.car;
+}
+
 exports.PLUS = function ()  {
     var a=0; 
     for (var i=0; i < arguments.length; i++) { 

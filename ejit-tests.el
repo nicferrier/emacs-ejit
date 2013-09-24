@@ -23,6 +23,15 @@
        (list (FUNCTION (a) (MULT 20 a)))))
     (print ejit/trace-log (current-buffer)))
 
+
+  (let (ejit/trace-log
+        ejit/function-space)
+    (print
+     (list
+      (ejit/translate '(DEFUNC nic-test (a b) (progn (+ a b))))
+      (ejit/translate '(nic-test 10 11))
+      ejit/function-space) (current-buffer)))
+
   (let ((ejit/trace-log ()))
     (ejit/translate
      '(apply (FUNCTION (x y) (MULT 1))
@@ -30,7 +39,7 @@
     (print ejit/trace-log (current-buffer))))
 
 (ert-deftest ejit/tanslate ()
-  (let (ejit-compile-frame)
+  (let ((ejit-compile-frame "${__ejit__}"))
     (should
      (equal
       (ejit/translate '(MULT(PLUS a (car b)) 2))
@@ -50,7 +59,7 @@
              "try { ejit.PLUS(10, 20) } catch (e) { ejit.MULT(2, 20)}"))))
 
 (ert-deftest ejit-compile ()
-  (let (ejit-compile-frame)
+  (let ((ejit-compile-frame "${__ejit__}"))
     (should
      (equal
       (ejit-compile
@@ -65,5 +74,24 @@
  ejit.MULT(ejit.PLUS(a, ejit.car(b)), 2) })(1, [10])
  })(function (a) { ejit.MULT(20, a) })"))
       ))))
+
+(defun ejit-test-compile-buffer ()
+  "Test the compile-everything-in-a-buffer function."
+  (with-current-buffer (get-buffer "buffer-test.el")
+    (save-excursion
+      (goto-char (point-min))
+      (ejit-compile-buffer (current-buffer)))))
+
+(ert-deftest ejit-node-tests ()
+  (should (equal "4" (ejit-process (* (car (cons 2 2)) 2))))
+  (should (equal "5" (ejit-process (+ (cadr (cons 2 (cons 3 4))) 2))))
+  (should (equal "7" (ejit-process (+ (caddr (cons 2 (cons 3 (cons 5 nil)))) 2))))
+
+  ;; Testing require
+  (ejit/translate
+   '(progn
+     (require 'test)
+     (nictest "hello"))))
+
 
 ;;; ejit-tests.el ends here
