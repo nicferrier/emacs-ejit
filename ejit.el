@@ -36,18 +36,31 @@
   (print (ejit/lisp->ejitlisp form) (current-buffer)))
 
 (defun ejit/expr-map (lst &optional sep)
-  "Make the LST of forms a comma separated JS expression list."
-  ;; TODO we need something cleverer that can understand how to make
-  ;; the last thing a return
-  (mapconcat
-   (lambda (f)
-     (cond
-       ((eq f nil) "null")
-       ((eq f t) "true")
-       ((stringp f)(format "%S" f))
-       ((atom f) (format "%s" f))
-       ((listp f) (ejit/translate f))))
-   lst (or sep ", ")))
+  "Make the LST of forms a comma separated JS expression list.
+
+If SEP starts with \";\" then the last element of the list of
+expressions is morphed into a return statement."
+  (let ((translated
+         (-map
+          (lambda (f)
+            (cond
+              ((eq f nil) "null")
+              ((eq f t) "true")
+              ((stringp f)(format "%S" f))
+              ((atom f) (format "%s" f))
+              ((listp f) (ejit/translate f)))) 
+          lst)))
+    (mapconcat 'identity translated (or sep ", "))))
+
+;;; this is what we were using to put the return in
+;; (if (s-starts-with? ";" (or sep ""))
+;;         (let* ((revd (reverse translated))
+;;                (body (mapconcat 'identity (reverse (cdr revd)) ";")))
+;;           (concat
+;;            (if (equal body "") "" (concat body ";"))
+;;            (format "return %s;" (car revd))))
+;;         ;; Else just do the whole list
+;;         (mapconcat 'identity translated (or sep ", ")))
 
 (defconst ejit/builtin-functions
   '(car cdr cons cadr caddr cadddr require MULT DIVIDE PLUS MINUS)
@@ -94,9 +107,7 @@
                (list "" next '()))
          (format "function %s(%s) { %s }" name
                  (mapconcat 'symbol-name (car defn) ",")
-                 (ejit/expr-map (cdr defn) ";")
-                 ;;(ejit/translate (cdr defn))
-                 )))
+                 (ejit/expr-map (cdr defn) ";"))))
       ((numberp e) (format "%d" e))
       ((atom e)
        (format
@@ -116,13 +127,11 @@ console.log(
 `s-format' is used to produce this, the `s-format' marker
 `__ejit__' is replaced with the compiled ejit.")
 
-(defun ejit-compile (form &optional insert)
+(defun ejit-compile (form &optional debug)
   "Return Javascript for FORM.
 
 Also returns the trace log."
-  (interactive
-   (list (preceding-sexp)
-         current-prefix-arg))
+  (interactive (list (preceding-sexp) current-prefix-arg))
   (let ((ejit/trace-log '()))
     (let* ((js (ejit/translate (ejit/lisp->ejitlisp form)))
            (debug-added (propertize js :trace (copy-list ejit/trace-log)))
@@ -133,16 +142,30 @@ Also returns the trace log."
                  'aget
                  (list (cons "__ejit__" debug-added)))
                 debug-added)))
-      (when insert (insert (format "%s" full-js)))
+      (case debug
+        (1 (message "ejit js: %s" js))
+        (2 (message "ejit js: %s" debug-added))
+        (t (insert (format "%s" full-js))))
       full-js)))
 
-(defun ejit-compile-buffer (buffer &optional insert-buffer)
+(defun ejit-compile-buffer (buffer &optional debug)
+  "Compile the forms in BUFFER to JavaScript.
+
+DEBUG can be specified via the `current-prefix-arg' and has special meanings.
+
+If DEBUG is a buffer then the compiled javascript is inserted
+into it and it's made into a js2-mode buffer.  When called
+interactively the buffer is constructed if `current-prefix-arg'
+is specified."
   (interactive
    (if (eq major-mode 'emacs-lisp-mode)
        (list
         (current-buffer)
-        (get-buffer-create
-         (concat (file-name-base (buffer-file-name)) ".js")))))
+        (if (member current-prefix-arg '(1 2))
+            current-prefix-arg
+            ;; Else make a buffer
+            (get-buffer-create
+             (concat (file-name-base (buffer-file-name)) ".js"))))))
   (let* (res
          (js
           (condition-case err
@@ -163,13 +186,13 @@ Also returns the trace log."
                  (s-format ejit-compile-frame 'aget
                            (list (cons "__ejit__" (s-join ";\n" res))))
                  (format "%S" res))))))
-    (when (called-interactively-p 'any)
-      (with-current-buffer insert-buffer
-        (erase-buffer)
-        (insert js))
-      (switch-to-buffer-other-window insert-buffer))
+    (if (bufferp debug)
+        (with-current-buffer debug
+          (erase-buffer)
+          (insert js)
+          (javascript-mode)
+          (switch-to-buffer-other-window (current-buffer))))
     js))
-
 
 (defmacro cond-re (expression &rest clauses)
   "Evaluate EXPRESSION and then match regex CLAUSES against it.
@@ -229,27 +252,36 @@ it was passed as a list."
         (accept-process-output proc 0 (or millis 100)))
       res)))
 
-(defun ejit-nodejs (form)
+
+(defun ejit-nodejs (form &optional debug)
   "Compile FORM to Javascript, save it and run it in NodeJs.
 
 Returns the list of lines that resulted."
+  (interactive (list (preceding-sexp) current-prefix-arg))
   (let ((filename (make-temp-file "ejit_node" nil ".js")))
     (let ((ejit-compile-frame
            (format "var ejit = require (process.cwd() + \"/ejit.js\");
 ejit.emacs_process = \"%s\";
-console.log((function(){${__ejit__}})());"
+console.log((function(){return { _: ${__ejit__} }._;})());"
                    (concat invocation-directory invocation-name))))
       (with-temp-file filename
         (ejit-compile form t)))
-    (unwind-protect
-         (destructuring-bind (status-code data-lines)
-             (funcall
-              (proc-shell-promise
-               (format "%s %s" nodejs-repl-command filename)))
-           (if (> status-code 0)
-               (error "bad js: %s" (s-join "\n" data-lines))
-               (car (-filter (lambda (line) (not (equal "" line))) data-lines))))
-      (delete-file filename))))
+    (noflet ((compilejs (filename)
+               (destructuring-bind (status-code data-lines)
+                   (funcall
+                    (proc-shell-promise
+                     (format "%s %s" nodejs-repl-command filename)))
+                 (if (> status-code 0)
+                     (error "bad js: %s" (s-join "\n" data-lines))
+                     (car (-filter (lambda (line)
+                                     (not (equal "" line))) data-lines))))))
+      (if (not debug)
+          (unwind-protect
+               (compilejs filename)
+            (delete-file filename))
+          ;; Else compile it and open the file in another buffer
+          (compilejs filename)
+          (find-file-other-window filename)))))
 
 (defmacro ejit-process (&rest body)
   "Evaluate BODY as Javascript in NodeJs."
