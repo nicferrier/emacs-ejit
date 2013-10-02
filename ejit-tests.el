@@ -75,22 +75,36 @@
               '(TRYCATCH (PLUS 10 20) (MULT 2 20)))
              "try { ejit.PLUS(10, 20) } catch (e) { ejit.MULT(2, 20)}"))))
 
+(defun ejit-= (str1 str2)
+  (equal 
+   (s-collapse-whitespace str1)
+   (s-collapse-whitespace str2)))
+
 (ert-deftest ejit-compile ()
   (let ((ejit-compile-frame "${__ejit__}"))
     (should
-     (equal
+     (ejit-=
       (ejit-compile
-       '(flet ((myfunc (a)
-                (* 20 a)))
-         (let ((a 1)
-               (b '(10)))
-           (* (+ a (car b)) 2))))
-      (s-collapse-whitespace
-       (concat "(function (myfunc) {
- (function (a,b) {
- ejit.MULT(ejit.PLUS(a, ejit.CAR(b)), 2) })(1, [10])
- })(function (a) { ejit.MULT(20, a) })"))
-      ))))
+       (quote
+        (flet ((myfunc (a)
+                 (* 20 a)))
+          (let ((a 1)
+                (b '(10)))
+            (* (+ a (car b)) 2)))))
+      "(function (myfunc) { 
+   return 
+   (function (){
+      return 
+      (function (a,b) { 
+         return 
+         (function (){
+            return ejit.MULT(ejit.PLUS(a, ejit.car(b)), 2);
+          })();
+       })(1, [10]);
+    })(); 
+ })(function (a) { 
+      return (function (){ return ejit.MULT(20, a); })(); 
+    })"))))
 
 (defun ejit-test-compile-buffer ()
   "Test the compile-everything-in-a-buffer function."
