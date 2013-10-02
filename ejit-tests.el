@@ -46,8 +46,8 @@
        (list
         (ejit/translate (ejit/lisp->ejitlisp '(defun nic-test (a b)  (+ a b))))
         (ejit/translate '(nic-test 10 11)))
-        ejit/function-space))
-     (current-buffer))
+       ejit/function-space))
+    (current-buffer))
 
   (let ((ejit/trace-log ()))
     (ejit/translate
