@@ -2,6 +2,20 @@
 
 (require 's)
 (require 'ejit)
+(require 'ert)
+
+(ert-deftest ejit/symbol->jsname ()
+  "Test symbol name mangling."
+  (should (equal (ejit/symbol->jsname 'nic-test) "nic_test"))
+  (should (equal (ejit/symbol->jsname 'nic_test-blah) "nic__test_blah"))
+  (should (equal (ejit/symbol->jsname 'nic/test-blah) "nic_slash_test_blah")))
+
+(ert-deftest ejit/expr-map ()
+  "Test the expression list mapping routine."
+  (should (equal (ejit/expr-map '((value) 3) :func) "ejit.value();return 3;"))
+  (should (equal (ejit/expr-map '(3) :func) "return 3;"))
+  (should (equal (ejit/expr-map '((value) 3) ";") "ejit.value();3"))
+  (should (equal (ejit/expr-map '(1 2 3)) "1, 2, 3")))
 
 (defun ejit/scratch ()
   "a bunch of scratchy working out stuff."
@@ -40,18 +54,6 @@
      '(apply (FUNCTION (x y) (MULT 1))
        (list (FUNCTION (a) (MULT 2)) (MULT 3 4))))
     (print ejit/trace-log (current-buffer))))
-
-(ert-deftest ejit/expr-map ()
-  "Test the expression list mapping routine."
-  (should
-   (equal 
-    (ejit/expr-map '((value) 3) ";")
-    "ejit.value();return 3;"))
-  (should
-   (equal
-    (ejit/expr-map '(3) ";")
-    "return 3;"))
-  (should (equal (ejit/expr-map '(1 2 3)) "1, 2, 3")))
 
 (ert-deftest ejit/tanslate ()
   (let ((ejit-compile-frame "${__ejit__}"))
