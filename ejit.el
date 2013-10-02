@@ -1,6 +1,9 @@
 ;;; ejit.el - a javascript compiler for emacs-lisp -*- lexical-binding: t -*-
 
 (require 'cl-lib)
+(require 's)
+(require 'noflet)
+(require 'nodejs-repl)
 
 (cl-defmacro macroexpand-all-locally (form &environment env)
   "Macroexpand things made with macrolet."
@@ -8,11 +11,18 @@
 
 (defvar ejit/trace-log '())
 
+;; notes
+;;
+;; the macro compiler could do lisp-2 ness I think
+;;
+;; defun could be transformed to an fset
+;; fset could be further transformed to a setq on a particular namespace
+
 (defun ejit/lisp->ejitlisp (form)
   "Translate Emacs-Lisp to EjitLisp."
   (cl-macrolet 
       ((let (bindings &rest body)
-         `(apply
+         `(CALL-FUNC
            (lambda ,(mapcar 'car bindings) ,@body)
            (list ,@(mapcar 'cadr bindings))))
        (flet (bindings &rest forms)
@@ -22,7 +32,9 @@
                    bindings))
             ,@forms))
        (defun (name args &rest body)
-           `(DEFUNC ,name ,args (progn ,@body)))
+           `(FSET ,name (lambda ,args (progn ,@body))))
+       (lambda (args &rest body)
+         `(FUNCTION ,args (progn ,@body)))
        (+ (&rest lst) `(PLUS ,@lst))
        (- (&rest lst) `(MINUS ,@lst))
        (* (&rest lst) `(MULT ,@lst))
@@ -35,39 +47,34 @@
   "Print FORM as EjitLisp."
   (print (ejit/lisp->ejitlisp form) (current-buffer)))
 
+(defun ejit/symbol->jsname (symbol)
+  "Mangle elisp symbol names so they are acceptable js names."
+  (replace-regexp-in-string
+   "/" "_slash_"
+   (replace-regexp-in-string
+    "-" "_"
+    (replace-regexp-in-string
+     "_" "__" (symbol-name symbol)))))
+
 (defun ejit/expr-map (lst &optional sep)
   "Make the LST of forms a comma separated JS expression list.
 
 If SEP starts with \";\" then the last element of the list of
 expressions is morphed into a return statement."
-  (let ((translated
-         (-map
-          (lambda (f)
-            (cond
-              ((eq f nil) "null")
-              ((eq f t) "true")
-              ((stringp f)(format "%S" f))
-              ((atom f) (format "%s" f))
-              ((listp f) (ejit/translate f)))) 
-          lst)))
-    (mapconcat 'identity translated (or sep ", "))))
-
-;;; this is what we were using to put the return in
-;; (if (s-starts-with? ";" (or sep ""))
-;;         (let* ((revd (reverse translated))
-;;                (body (mapconcat 'identity (reverse (cdr revd)) ";")))
-;;           (concat
-;;            (if (equal body "") "" (concat body ";"))
-;;            (format "return %s;" (car revd))))
-;;         ;; Else just do the whole list
-;;         (mapconcat 'identity translated (or sep ", ")))
-
-(defconst ejit/builtin-functions
-  '(car cdr cons cadr caddr cadddr require MULT DIVIDE PLUS MINUS)
-  "List of functions that are built in to Ejit via JS.")
-
-(defvar ejit/function-space '()
-  "The function space used for tracking defuns.")
+  (noflet ((tx (f)
+             (cond
+               ((eq f nil) "null")
+               ((eq f t) "true")
+               ((stringp f)(format "%S" f))
+               ((symbolp f) (ejit/symbol->jsname f))
+               ((atom f) (format "%s" f))
+               ((listp f) (ejit/translate f)))))
+    (if (eq sep :func) 
+        (destructuring-bind (kar &rest kdr) (reverse (-map 'tx lst))
+          (concat
+           (mapconcat (lambda (e) (format "%s;" e)) kdr "")
+           (format "return %s;" kar)))
+        (mapconcat 'tx lst (or sep ", ")))))
 
 (defun ejit/translate (ejit-form)
   "Translate EjitLisp to JS."
@@ -76,9 +83,11 @@ expressions is morphed into a return statement."
     (push (list (format "%S {%s}" ejit-form e)) ejit/trace-log)
     (cond
       ((listp e) (format "(%s)" (ejit/translate e)))
-      ((eq e 'apply)
+      ((eq e 'CALL-FUNC)
        (format "(%s)(%s)"
-               (ejit/translate (car next))
+               (if (listp (car next))
+                   (ejit/translate (car next))
+                   (car next))
                (if (cdr next) (ejit/expr-map (cdadr next)) "")))
       ((eq e 'list) (format "[%s]" (ejit/expr-map next)))
       ((eq e 'quote)
@@ -88,18 +97,18 @@ expressions is morphed into a return statement."
          ((and (listp next)(atom (car next))) ; not convinced about this rule
           (format "\"%s\"" (car next)))
          (t "")))
-      ((eq e 'progn) (format "{%s;}" (ejit/expr-map next ";")))
+      ((eq e 'progn) (format
+                      "(function (){ %s })()"
+                      (ejit/expr-map next :func)))
       ((eq e 'TRYCATCH)
        (format "try { %s } catch (e) { %s}"
                (ejit/translate (car next))
                (ejit/translate (cadr next))))
-      ((eq e 'DEFUNC)
+      ((eq e 'FSET)
        (let ((func-name (car next)))
-         (push func-name ejit/function-space) ; save the func for later
-         (format "ejit.%s = (function (%s) { %s})"
-                 func-name ; the name
-                 (ejit/expr-map (cadr next))
-                 (ejit/expr-map (cddr next) ";"))))
+         (format "ejit.%s = %s"
+                 (ejit/symbol->jsname func-name) ; the name
+                 (ejit/translate (cadr next)))))
       ((eq e 'FUNCTION)
        (cl-destructuring-bind (name defn rest)
            (if (stringp (car next))
@@ -107,15 +116,12 @@ expressions is morphed into a return statement."
                (list "" next '()))
          (format "function %s(%s) { %s }" name
                  (mapconcat 'symbol-name (car defn) ",")
-                 (ejit/expr-map (cdr defn) ";"))))
+                 (ejit/expr-map (cdr defn) :func))))
       ((numberp e) (format "%d" e))
       ((atom e)
        (format
         "%s(%s)"
-        (-if-let (builtin (member e ejit/builtin-functions))
-          ;; Builtins are upcase converted but otherwise no different
-          (format "ejit.%s" (upcase (format "%s" (car builtin))))
-          (format "ejit.%s" e))
+        (format "ejit.%s" (ejit/symbol->jsname e))
         (if next (ejit/expr-map next) ""))))))
 
 (defvar ejit-compile-frame "var ejit = require('ejit.js');
@@ -142,10 +148,15 @@ Also returns the trace log."
                  'aget
                  (list (cons "__ejit__" debug-added)))
                 debug-added)))
-      (case debug
-        (1 (message "ejit js: %s" js))
-        (2 (message "ejit js: %s" debug-added))
-        (t (insert (format "%s" full-js))))
+      (when debug
+        (case debug
+          (1 (progn 
+               (message "ejit js: %s" js)
+               (kill-new js)))
+          (2 (progn 
+               (message "ejit js: %s" debug-added)
+               (kill-new debug-added)))
+          (t (insert (format "%s" full-js)))))
       full-js)))
 
 (defun ejit-compile-buffer (buffer &optional debug)
@@ -186,13 +197,27 @@ is specified."
                  (s-format ejit-compile-frame 'aget
                            (list (cons "__ejit__" (s-join ";\n" res))))
                  (format "%S" res))))))
-    (if (bufferp debug)
-        (with-current-buffer debug
-          (erase-buffer)
-          (insert js)
-          (javascript-mode)
-          (switch-to-buffer-other-window (current-buffer))))
+    (when (bufferp debug)
+      (with-current-buffer debug
+        (erase-buffer)
+        (insert js)
+        (javascript-mode)
+        (switch-to-buffer-other-window (current-buffer))))
     js))
+
+(defun ejit-compile-file (file-name &optional debug)
+  "Compile the file of Emacs Lisp to Javascript."
+  (interactive
+   (list
+    (when (eq major-mode 'emacs-lisp-mode) (buffer-file-name))
+    current-prefix-arg))
+  (let ((out-file (make-temp-file
+                   (format "ejit-%s" (file-name-nondirectory file-name))
+                   nil "js"))
+        (js (ejit-compile-buffer (find-file file-name))))
+    (with-temp-file out-file (insert js))
+    (when debug (find-file out-file))
+    (message out-file)))
 
 (defmacro cond-re (expression &rest clauses)
   "Evaluate EXPRESSION and then match regex CLAUSES against it.
@@ -252,7 +277,6 @@ it was passed as a list."
         (accept-process-output proc 0 (or millis 100)))
       res)))
 
-
 (defun ejit-nodejs (form &optional debug)
   "Compile FORM to Javascript, save it and run it in NodeJs.
 
@@ -261,9 +285,15 @@ Returns the list of lines that resulted."
   (let ((filename (make-temp-file "ejit_node" nil ".js")))
     (let ((ejit-compile-frame
            (format "var ejit = require (process.cwd() + \"/ejit.js\");
+ejit.emacs_env = \"node\";
 ejit.emacs_process = \"%s\";
-console.log((function(){return { _: ${__ejit__} }._;})());"
-                   (concat invocation-directory invocation-name))))
+ejit.ejit_compiler_location = \"%s\";
+${__ejit__};\n"
+                   (concat invocation-directory invocation-name)
+                   (concat
+                    (file-name-directory 
+                     (or load-file-name buffer-file-name))
+                    "ejit-compiler.js"))))
       (with-temp-file filename
         (ejit-compile form t)))
     (noflet ((compilejs (filename)
@@ -272,7 +302,8 @@ console.log((function(){return { _: ${__ejit__} }._;})());"
                     (proc-shell-promise
                      (format "%s %s" nodejs-repl-command filename)))
                  (if (> status-code 0)
-                     (error "bad js: %s" (s-join "\n" data-lines))
+                     (when (not debug)
+                       (error "bad js: %s" (s-join "\n" data-lines)))
                      (car (-filter (lambda (line)
                                      (not (equal "" line))) data-lines))))))
       (if (not debug)
@@ -286,6 +317,8 @@ console.log((function(){return { _: ${__ejit__} }._;})());"
 (defmacro ejit-process (&rest body)
   "Evaluate BODY as Javascript in NodeJs."
   `(ejit-nodejs (quote ,@body)))
+
+(provide 'ejit)
 
 ;;; ejit.el ends here
 
