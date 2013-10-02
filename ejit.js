@@ -3,30 +3,52 @@ var WrongNumberOfArguments = function(msg) {
     this.name = "WrongNumberOfArguments";
 };
 
-exports.CONS = function (car, cdr) {
+exports.JSREQUIRE = function (symbol) {
+    // Loads symbol (a string) into the current scope.
+    var path = process.cwd() + "/" + symbol;
+    try {
+        var loadthing = require (path);
+        for (var key in loadthing) {
+            exports[key] = loadthing[key];
+        }
+    }
+    catch (e) {
+        throw new Exception("failed to require with " + path);
+    }
+};
+
+exports.require = function (symbol) {
+    // We need the ejit namespace to have been established.
+    child_process.spawn(
+        ejit.emacs_process,
+        ["-batch", ""]
+    );
+};
+
+exports.cons = function (car, cdr) {
     return {
         car: car,
         cdr: cdr
     };
 };
  
-exports.CAR = function (cons) {
+exports.car = function (cons) {
     return cons.car;
 };
     
-exports.CDR = function (cons) {
+exports.cdr = function (cons) {
     return cons.cdr;
 };
 
-exports.CADR = function (cons) {
+exports.cadr = function (cons) {
     return cons.cdr.car;
 }
 
-exports.CADDR = function (cons) {
+exports.caddr = function (cons) {
     return cons.cdr.cdr.car;
 }
 
-exports.CADDDR = function (cons) {
+exports.cadddr = function (cons) {
     return cons.cdr.cdr.cdr.car;
 }
 
@@ -69,5 +91,38 @@ exports.DIVIDE = function ()  {
             a = a - arguments[i];
         }
         return a;
+    }
+};
+
+
+// And the std library
+
+exports.message = function () {
+    if (arguments.length < 2) {
+        console.log(arguments);
+    }
+    else {
+        // Pretty sure this is rubbish, much better version needed
+        var fmt_convert = function (value, spec) {
+            if (spec=="s") {
+                return "" + value;
+            }
+            else if (spec=="d") {
+                return "" + parseInt("" + value);
+            }
+            else if (spec=="f") {
+                return "" + parseFloat("" + value);
+            }
+            else {
+                return "ERROR";
+            }
+        };
+        var args = arguments.reverse();
+        var format_string = args.pop();
+        format_string.split(/(%[sd])/).map(
+            function (e) { 
+                return (e.indexOf("%") == 0) ? args.pop():e;
+            }
+        );
     }
 };
