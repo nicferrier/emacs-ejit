@@ -99,16 +99,34 @@
       (goto-char (point-min))
       (ejit-compile-buffer (current-buffer)))))
 
+(ert-deftest ejit-function-tx ()
+  (should
+   (equal
+    (ejit/lisp->ejitlisp (quote (let ((nictest 10)) (+ 10 12) nictest)))
+    '(CALL-FUNC (FUNCTION (nictest) (progn nictest)) (list 10))))  
+  (should
+   (equal
+    (ejit/lisp->ejitlisp (quote (flet ((nictest ()
+                                         10))
+                                  (nictest))))
+    '(apply
+      (FUNCTION (nictest)
+       (progn (nictest)))
+      (list (FUNCTION nil (progn 10))))))
+  (should
+   (equal
+    (ejit/lisp->ejitlisp (quote (progn (defun nictest () 10)(nictest))))
+    '(progn (FSET nictest (FUNCTION nil (progn (progn 10)))) (nictest)))))
+
 (ert-deftest ejit-node-tests ()
   (should (equal "4" (ejit-process (* (car (cons 2 2)) 2))))
   (should (equal "5" (ejit-process (+ (cadr (cons 2 (cons 3 4))) 2))))
   (should (equal "7" (ejit-process (+ (caddr (cons 2 (cons 3 (cons 5 nil)))) 2))))
-
+  (should (equal "" (ejit-process (progn (defun nic-test () 10) (nic-test)))))
   ;; Testing require
   (ejit/translate
    '(progn
      (require 'test)
      (nictest "hello"))))
-
 
 ;;; ejit-tests.el ends here
