@@ -117,15 +117,13 @@
   (should
    (equal
     (ejit/lisp->ejitlisp (quote (let ((nictest 10)) (+ 10 12) nictest)))
-    '(CALL-FUNC (FUNCTION (nictest) (progn nictest)) (list 10))))  
+    '(CALL-FUNC (FUNCTION (nictest) (progn (PLUS 10 12) nictest)) (list 10))))
   (should
    (equal
-    (ejit/lisp->ejitlisp (quote (flet ((nictest ()
-                                         10))
-                                  (nictest))))
-    '(apply
+    (ejit/lisp->ejitlisp (quote (flet ((nictest () 10)) (nictest))))
+    '(CALL-FUNC
       (FUNCTION (nictest)
-       (progn (nictest)))
+       (progn (nictest)))  ;; not sure whether this should be CALL-FUNC nictest
       (list (FUNCTION nil (progn 10))))))
   (should
    (equal
