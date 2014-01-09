@@ -4,6 +4,7 @@
 (require 's)
 (require 'noflet)
 (require 'nodejs-repl)
+(require 'dash)
 
 (cl-defmacro macroexpand-all-locally (form &environment env)
   "Macroexpand things made with macrolet."
