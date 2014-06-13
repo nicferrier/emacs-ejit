@@ -47,3 +47,20 @@ whether it's working or not.
 
 The next step though is to have some sort of offline test of the
 output using nodejs.
+
+
+== FAQ ==
+
+//Do we need a prefix->infix converter?//
+
+I thought so at first (and there's an example of how to do it in the
+repository). But of course it's entirely possible to represent Elisp
+expressions as JS function application. I think that's easier than
+trying to do optimization of expressions into more natural JS
+expressions.
+
+
+//Lexical or dynamic scope?//
+
+It wouldn't be elisp if we didn't have both. Exactly how to offer that
+is the current problem.
