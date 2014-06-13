@@ -322,5 +322,3 @@ console.log(${__ejit__});\n"
 (provide 'ejit)
 
 ;;; ejit.el ends here
-
-
