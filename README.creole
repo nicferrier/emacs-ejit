@@ -64,3 +64,10 @@ expressions.
 
 It wouldn't be elisp if we didn't have both. Exactly how to offer that
 is the current problem.
+
+I've added the file [[lexical-test-1.el]] to describe some of the
+problems of lex-scope.
+
+My first inclination though is to do what I think the default Emacs
+behaviour should be, namely the code is in lexical binding mode and
+special variables have to be {{{defvar}}}ed.
