@@ -289,7 +289,7 @@ Returns the list of lines that resulted."
 ejit.emacs_env = \"node\";
 ejit.emacs_process = \"%s\";
 ejit.ejit_compiler_location = \"%s\";
-${__ejit__};\n"
+console.log(${__ejit__});\n"
                    (concat invocation-directory invocation-name)
                    (concat
                     (file-name-directory 
