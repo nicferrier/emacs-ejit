@@ -4,6 +4,13 @@
 (require 'ejit)
 (require 'ert)
 
+(defmacro ejit/Z (&rest expression)
+  "Make the next expression frameless.
+
+The resulting javascript won't be wrapped in any boilerplate JS."
+  `(let ((ejit-compile-frame "${__ejit__}"))
+     ,@expression))
+
 (ert-deftest ejit/symbol->jsname ()
   "Test symbol name mangling."
   (should (equal (ejit/symbol->jsname 'nic-test) "nic_test"))
@@ -56,24 +63,23 @@
     (print ejit/trace-log (current-buffer))))
 
 (ert-deftest ejit/tanslate ()
-  (let ((ejit-compile-frame "${__ejit__}"))
-    (should
-     (equal
-      (ejit/translate '(MULT(PLUS a (car b)) 2))
-      "ejit.MULT(ejit.PLUS(a, ejit.CAR(b)), 2)"))
-    (should (equal (ejit/translate '(quote (1 2 3))) "[1, 2, 3]"))
-    (should (equal (ejit-compile '(quote (1 2 3))) "[1, 2, 3]"))
-    ;; not sure about this rule
-    (should (equal (ejit/translate '(quote a)) "\"a\""))
-    (should (equal (ejit-compile '(quote a)) "\"a\""))
-    ;; lists
-    (should (equal (ejit-compile '(list 1 2 3)) "[1, 2, 3]"))
-    (should (equal (ejit-compile '(list 1 (* 2 3) 3))
-                   "[1, ejit.MULT(2, 3), 3]"))
-    (should (equal
-             (ejit/translate
-              '(TRYCATCH (PLUS 10 20) (MULT 2 20)))
-             "try { ejit.PLUS(10, 20) } catch (e) { ejit.MULT(2, 20)}"))))
+  (should
+   (equal
+    (ejit/Z (ejit/translate '(MULT(PLUS a (car b)) 2)))
+    "ejit.MULT(ejit.PLUS(a, ejit.CAR(b)), 2)"))
+  (should (equal (ejit/Z (ejit/translate '(quote (1 2 3)))) "[1, 2, 3]"))
+  (should (equal (ejit/Z (ejit-compile '(quote (1 2 3)))) "[1, 2, 3]"))
+  ;; not sure about this rule
+  (should (equal (ejit/Z (ejit/translate '(quote a))) "\"a\""))
+  (should (equal (ejit/Z (ejit-compile '(quote a))) "\"a\""))
+  ;; lists
+  (should (equal (ejit/Z (ejit-compile '(list 1 2 3))) "[1, 2, 3]"))
+  (should (equal (ejit/Z (ejit-compile '(list 1 (* 2 3) 3)))
+                 "[1, ejit.MULT(2, 3), 3]"))
+  (should (equal
+           (ejit/Z (ejit/translate
+                    '(TRYCATCH (PLUS 10 20) (MULT 2 20))))
+           "try { ejit.PLUS(10, 20) } catch (e) { ejit.MULT(2, 20)}")))
 
 (defun ejit-= (str1 str2)
   (equal 
@@ -81,17 +87,17 @@
    (s-collapse-whitespace str2)))
 
 (ert-deftest ejit-compile ()
-  (let ((ejit-compile-frame "${__ejit__}"))
-    (should
-     (ejit-=
-      (ejit-compile
-       (quote
-        (flet ((myfunc (a)
-                 (* 20 a)))
-          (let ((a 1)
-                (b '(10)))
-            (* (+ a (car b)) 2)))))
-      "(function (myfunc) { 
+  (should
+   (ejit-=
+    (ejit/Z
+     (ejit-compile
+      (quote
+       (flet ((myfunc (a)
+                (* 20 a)))
+         (let ((a 1)
+               (b '(10)))
+           (* (+ a (car b)) 2))))))
+    "(function (myfunc) { 
    return 
    (function (){
       return 
@@ -104,7 +110,7 @@
     })(); 
  })(function (a) { 
       return (function (){ return ejit.MULT(20, a); })(); 
-    })"))))
+    })")))
 
 (defun ejit-test-compile-buffer ()
   "Test the compile-everything-in-a-buffer function."
