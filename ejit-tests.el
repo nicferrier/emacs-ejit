@@ -66,7 +66,7 @@ The resulting javascript won't be wrapped in any boilerplate JS."
   (should
    (equal
     (ejit/Z (ejit/translate '(MULT(PLUS a (car b)) 2)))
-    "ejit.MULT(ejit.PLUS(a, ejit.CAR(b)), 2)"))
+    "ejit.MULT(ejit.PLUS(a, ejit.car(b)), 2)"))
   (should (equal (ejit/Z (ejit/translate '(quote (1 2 3)))) "[1, 2, 3]"))
   (should (equal (ejit/Z (ejit-compile '(quote (1 2 3)))) "[1, 2, 3]"))
   ;; not sure about this rule
@@ -140,7 +140,7 @@ The resulting javascript won't be wrapped in any boilerplate JS."
   (should (equal "4" (ejit-process (* (car (cons 2 2)) 2))))
   (should (equal "5" (ejit-process (+ (cadr (cons 2 (cons 3 4))) 2))))
   (should (equal "7" (ejit-process (+ (caddr (cons 2 (cons 3 (cons 5 nil)))) 2))))
-  (should (equal "" (ejit-process (progn (defun nic-test () 10) (nic-test)))))
+  (should (equal "10" (ejit-process (progn (defun nic-test () 10) (nic-test)))))
   ;; Testing require
   (ejit/translate
    '(progn

@@ -254,10 +254,10 @@ The RECEIVER is called with the numeric completion status and a
 list of lines of the output.  A default RECEIVER is supplied if
 none is given.
 
-A promise function is returned.  Call the promise to wait on the
-completion of the data.  The promise function returns whatever
-the RECEIVER returns.  The default RECEIVER simply returns what
-it was passed as a list."
+A promise function is returned.  `funcall' the promise function
+to wait on the completion of the data.  The promise function
+returns whatever the RECEIVER returns.  The default RECEIVER
+simply returns what it was passed as a list."
   (let (res
         (rfunc (or receiver (lambda (&rest lst) lst)))
         (proc (start-process-shell-command
@@ -291,10 +291,11 @@ ejit.emacs_process = \"%s\";
 ejit.ejit_compiler_location = \"%s\";
 console.log(${__ejit__});\n"
                    (concat invocation-directory invocation-name)
-                   (concat
-                    (file-name-directory 
-                     (or load-file-name buffer-file-name))
-                    "ejit-compiler.js"))))
+                   (expand-file-name "ejit-compiler.js"
+                                     (file-name-directory 
+                                      (or load-file-name
+                                          buffer-file-name
+                                          default-directory))))))
       (with-temp-file filename
         (ejit-compile form t)))
     (noflet ((compilejs (filename)
