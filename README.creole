@@ -97,6 +97,25 @@ My first inclination though is to do what I think the default Emacs
 behaviour should be, namely the code is in lexical binding mode and
 special variables have to be {{{defvar}}}ed.
 
+I think the easiest way to implement dynamic scope is to compile
+defvar (and //maybe// global setq) to something that records the var
+as special. Specials are just globals really, they could be collected
+in a great big function scope in js. For example:
+
+{{{
+(defvar a "my a")
+(let ((b "my b"))
+  (list a b))
+}}}
+
+Might come out as:
+
+{{{
+(function (a) {
+  (function (b) { return [a, b]; })("my b");
+})("my a");
+}}}
+
 
 //How does it work?//
 
