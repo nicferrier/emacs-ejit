@@ -74,21 +74,10 @@ Once we have a simplified language then we can code walk it easier. I
 have the beginnings of a code walker for the simple language.
 
 
-== FAQ ==
+=== Lisp 2 ===
 
-//Do we need a prefix->infix converter?//
-
-I thought so at first (and there's an example of how to do it in the
-repository). But of course it's entirely possible to represent Elisp
-expressions as JS function application. I think that's easier than
-trying to do optimization of expressions into more natural JS
-expressions.
-
-
-//Lexical or dynamic scope?//
-
-It wouldn't be elisp if we didn't have both. Exactly how to offer that
-is the current problem.
+It wouldn't be elisp if we didn't have both lexical and dynamic
+scope. Exactly how to offer that is the current problem.
 
 I've added the file [[lexical-test-1.el]] to describe some of the
 problems of lex-scope.
@@ -117,11 +106,8 @@ Might come out as:
 }}}
 
 
-//How does it work?//
 
-We redefine all the C forms as macros that expand to a basic Lisp
-language and then compile that to JS.
-
+=== Other problems ===
 
 //What would buffer locals mean??//
 
@@ -132,7 +118,7 @@ My aim is to make it possible to write elisp to run in the browser,
 not necessarily to make all elisp run in the browser.
 
 
-//Ok. Why the hell?//
+=== Ok. Why the hell? ===
 
 Because if we have this then maybe we could write a display engine in
 a browser. Maybe Emacs functions could be shimed to call back to
