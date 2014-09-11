@@ -6,7 +6,7 @@ assembly language.
 Elnode makes building webapps in Emacs relatively easy. But you still
 need to write a lot of Javascript. A lot of Javascript is boiler plate
 nonsense and can be mostly strung together with lots of little
-librarys. But it's still very tedious to do that. So I've written
+librarys. But it's still very tedious to do that. So I've started
 Ejit, to make it possible to build an entirely EmacsLisp webapp.
 
 Ejit takes EmacsLisp and compiles it to Javascript.
@@ -32,7 +32,11 @@ And here is the resulting Javascript:
       })
 }}}
 
-Note that there's also the start of an EmacsLisp kernel, which has to
+This is wrong, but it shows what ejit can do right now.
+
+=== What we have ===
+
+There's also the start of an EmacsLisp kernel, which has to
 be done in Javascript, and makes things like CAR and MULT and PLUS
 available.
 
@@ -45,8 +49,29 @@ I intend to build a testing framework for this using Elnode so that
 you can write your EmacsLisp for the browser and get feedback on
 whether it's working or not.
 
-The next step though is to have some sort of offline test of the
-output using nodejs.
+
+=== The approach? ===
+
+Emacs has more than 1100 special forms implemented in C. Many of these
+are for buffers and it's operating system environment and such like
+but some are language. {{{let}}} is a C special form. So is {{{let*}}}.
+
+The idea is to use a macro language to simplify most of EmacsLisp (not
+the //library// code, but the language code) to where we have just 1
+form for doing one thing.
+
+So {{{let*}}} can be simplified into {{{let}}} for example. Or the
+other way around. {{{cond}}} can be simplified into {{{if}}}.
+
+This seems like a useful goal in and of itself. If you want to help
+that part is quite easy. 
+
+You have to avoid writing recursive macro expansions (making {{{if}}}
+-> {{{if}}} for example) but that's pretty easy.
+
+
+Once we have a simplified language then we can code walk it easier. I
+have the beginnings of a code walker for the simple language.
 
 
 == FAQ ==
@@ -71,3 +96,27 @@ problems of lex-scope.
 My first inclination though is to do what I think the default Emacs
 behaviour should be, namely the code is in lexical binding mode and
 special variables have to be {{{defvar}}}ed.
+
+
+//How does it work?//
+
+We redefine all the C forms as macros that expand to a basic Lisp
+language and then compile that to JS.
+
+
+//What would buffer locals mean??//
+
+What indeed? there are lots of Emacs semantics things like this that
+might be really wierd.
+
+My aim is to make it possible to write elisp to run in the browser,
+not necessarily to make all elisp run in the browser.
+
+
+//Ok. Why the hell?//
+
+Because if we have this then maybe we could write a display engine in
+a browser. Maybe Emacs functions could be shimed to call back to
+Emacs. Maybe we could use browsers like multiple processes.
+
+There are possibilities.
