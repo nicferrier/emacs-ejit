@@ -3,6 +3,10 @@ var WrongNumberOfArguments = function(msg) {
     this.name = "WrongNumberOfArguments";
 };
 
+// The two emacs-lisp namespaces
+exports.vars = {};
+exports.functions = {};
+
 exports.JSREQUIRE = function (symbol) {
     // Loads symbol (a string) into the current scope.
     var path = process.cwd() + "/" + symbol;
@@ -97,32 +101,13 @@ exports.DIVIDE = function ()  {
 
 // And the std library
 
-exports.message = function () {
+var utils = require("util");
+
+exports.functions.message = function () {
     if (arguments.length < 2) {
         console.log(arguments);
     }
     else {
-        // Pretty sure this is rubbish, much better version needed
-        var fmt_convert = function (value, spec) {
-            if (spec=="s") {
-                return "" + value;
-            }
-            else if (spec=="d") {
-                return "" + parseInt("" + value);
-            }
-            else if (spec=="f") {
-                return "" + parseFloat("" + value);
-            }
-            else {
-                return "ERROR";
-            }
-        };
-        var args = arguments.reverse();
-        var format_string = args.pop();
-        format_string.split(/(%[sd])/).map(
-            function (e) { 
-                return (e.indexOf("%") == 0) ? args.pop():e;
-            }
-        );
+      console.log(utils.format(arguments));
     }
 };

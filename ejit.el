@@ -20,28 +20,37 @@
 ;; fset could be further transformed to a setq on a particular namespace
 
 (defun ejit/lisp->ejitlisp (form)
-  "Translate Emacs-Lisp to EjitLisp."
+  "Translate Emacs-Lisp C forms to EjitLisp."
   (cl-macrolet 
       ((let (bindings &rest body)
          `(CALL-FUNC
            (lambda ,(mapcar 'car bindings) ,@body)
            (list ,@(mapcar 'cadr bindings))))
-       (flet (bindings &rest forms)
-         `(let (,@(mapcar
-                   (lambda (b)
-                     (list (car b) (cons 'lambda (cdr b))))
-                   bindings))
-            ,@forms))
-       (defun (name args &rest body)
-           `(FSET ,name (lambda ,args (progn ,@body))))
+       (let* (bindings &rest body)
+         (if bindings
+             `(let (,(car bindings))
+                (let* (,@(cdr bindings))
+                  ,@body))
+             `(let () ,@body)))
+       (funcall (sym &optional args) `(CALL-FUNC ,sym ,args))
+       (if (test consq alt)
+           `(IF ,test ,consq (progn ,alt)))
+       (cond (&rest clauses)
+             )
+       (defvar (sym value &optional docstring) ;; just throw docstring away for now
+         `(setq ,sym ,value))
+       (defalias (sym func)
+           `(FSET ,(cadr sym) ,func))
        (lambda (args &rest body)
          `(FUNCTION ,args (progn ,@body)))
+       (setq (sym val &rest args)  ;; FIXME - because of `args' we should rewrite to partition
+             `(SETQ ,sym ,val))
        (+ (&rest lst) `(PLUS ,@lst))
        (- (&rest lst) `(MINUS ,@lst))
        (* (&rest lst) `(MULT ,@lst))
        (/ (&rest lst) `(DIVIDE ,@lst))
        (function (l-expr) `(FUNCTION ,@(cdr l-expr)))
-       (unwind-protect (form handler) `(TRYCATCH ,form ,handler)))
+       (unwind-protect (form handler) `(TRYFINALLY ,form ,handler)))
     (macroexpand-all-locally form)))
 
 (defun ejit/print (form)
@@ -77,6 +86,22 @@ expressions is morphed into a return statement."
            (format "return %s;" kar)))
         (mapconcat 'tx lst (or sep ", ")))))
 
+
+(defvar ejit/funcs nil)
+(defvar ejit/globals nil)
+
+;; FIXME support SETQ as an operation on some ejit.namespace ??
+;;
+;; we will have to change FSET as well, and CALL-FUNC... they should
+;; look up in a functions namespace
+;;
+;; questions for this -
+;;
+;; how do we support calling a function stored in the var namespace?
+;;
+;; how do we shadow the variable namespace with let?
+;; could we do it with trycatch restoring values?
+;; could we do it at a lower level, by copying the namespace?
 (defun ejit/translate (ejit-form)
   "Translate EjitLisp to JS."
   (let ((e (car ejit-form))
@@ -101,18 +126,25 @@ expressions is morphed into a return statement."
       ((eq e 'progn) (format
                       "(function (){ %s })()"
                       (ejit/expr-map next :func)))
-      ((eq e 'TRYCATCH)
-       (format "try { %s } catch (e) { %s}"
+      ((eq e 'SETQ)
+       (let ((name (car next)))
+         (push name ejit/globals)
+         (format "ejit.vars[\"%s\"] = %s"
+                 name
+                 (ejit/translate (cdr next)))))
+      ((eq e 'TRYFINALLY)
+       (format "try { %s } finally (e) { %s}"
                (ejit/translate (car next))
                (ejit/translate (cadr next))))
       ((eq e 'FSET)
        (let ((func-name (car next)))
-         (format "ejit.%s = %s"
+         (push func-name ejit/funcs)
+         (format "ejit.functions.%s = %s"
                  (ejit/symbol->jsname func-name) ; the name
                  (ejit/translate (cadr next)))))
       ((eq e 'FUNCTION)
        (cl-destructuring-bind (name defn rest)
-           (if (stringp (car next))
+           (if (stringp (car next)) ; lambdas don't have names
                (list (car next) (cdr next) '())
                (list "" next '()))
          (format "function %s(%s) { %s }" name
@@ -122,7 +154,7 @@ expressions is morphed into a return statement."
       ((atom e)
        (format
         "%s(%s)"
-        (format "ejit.%s" (ejit/symbol->jsname e))
+        (format "ejit.functions.%s" (ejit/symbol->jsname e))
         (if next (ejit/expr-map next) ""))))))
 
 (defvar ejit-compile-frame "var ejit = require('ejit.js');
@@ -139,7 +171,9 @@ console.log(
 
 Also returns the trace log."
   (interactive (list (preceding-sexp) current-prefix-arg))
-  (let ((ejit/trace-log '()))
+  (let ((ejit/trace-log '())
+        (ejit/globals nil)
+        (ejit/funcs nil))
     (let* ((js (ejit/translate (ejit/lisp->ejitlisp form)))
            (debug-added (propertize js :trace (copy-list ejit/trace-log)))
            (full-js
@@ -158,7 +192,17 @@ Also returns the trace log."
                (message "ejit js: %s" debug-added)
                (kill-new debug-added)))
           (t (insert (format "%s" full-js)))))
-      full-js)))
+      (propertize full-js :globals ejit/globals :funcs ejit/funcs))))
+
+(defun ejit-compile2 (form)
+  "Compile the elisp and drop it in a JS buffer."
+  (interactive (list (preceding-sexp)))
+  (with-current-buffer (get-buffer-create "*js*")
+    (erase-buffer)
+    (insert (ejit-compile form))
+    (js2-mode)
+    (switch-to-buffer-other-window (current-buffer)))
+  nil)
 
 (defun ejit-compile-buffer (buffer &optional debug)
   "Compile the forms in BUFFER to JavaScript.
@@ -298,22 +342,22 @@ console.log(${__ejit__});\n"
                                           default-directory))))))
       (with-temp-file filename
         (ejit-compile form t)))
-    (noflet ((compilejs (filename)
+    (noflet ((execjs (filename)
                (destructuring-bind (status-code data-lines)
                    (funcall
                     (proc-shell-promise
                      (format "%s %s" nodejs-repl-command filename)))
                  (if (> status-code 0)
-                     (when (not debug)
-                       (error "bad js: %s" (s-join "\n" data-lines)))
+                     ;; (when (not debug))
+                     (error "bad js: %s" (s-join "\n" data-lines))
                      (car (-filter (lambda (line)
                                      (not (equal "" line))) data-lines))))))
       (if (not debug)
           (unwind-protect
-               (compilejs filename)
+               (execjs filename)
             (delete-file filename))
           ;; Else compile it and open the file in another buffer
-          (compilejs filename)
+          (execjs filename)
           (find-file-other-window filename)))))
 
 (defmacro ejit-process (&rest body)
