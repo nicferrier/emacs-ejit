@@ -5,6 +5,7 @@
 (require 'noflet)
 (require 'nodejs-repl)
 (require 'dash)
+(require 'pp)
 
 (cl-defmacro macroexpand-all-locally (form &environment env)
   "Macroexpand things made with macrolet."
@@ -19,39 +20,118 @@
 ;; defun could be transformed to an fset
 ;; fset could be further transformed to a setq on a particular namespace
 
+
+;; I wrote with-escape and put it in org-email, it does pretty much
+;; what this does, not returning the catch result but only the
+;; non-local result.
+(defmacro ejit-catch-case (var bodyform &rest handlers)
+  "`condition-case' replacement using catch/throw."
+  ;; TODO - the signal form and handling error conditions and all that
+  (declare (debug (sexp form sexp))
+           (indent 1))
+  (let ((errorsym (make-symbol "errorsym"))
+        (errorcatch (make-symbol "errorcatch"))
+        (catch-result (make-symbol "catch-result")))
+    `(flet ((error (str)
+                (throw (quote ,errorcatch)
+                  (list (quote ,errorsym) 'error str))))
+       (let ((,catch-result 
+              (catch (quote ,errorcatch)
+                ,bodyform)))
+         ;; We must use a gensym'd symbol for error so user code can't make it
+         (if (eq (car-safe ,catch-result) (quote ,errorsym))
+             (let ((,var (cdr ,catch-result)))
+               (case (cadr ,catch-result)
+                 ,@handlers))
+             ,catch-result)))))
+
 (defun ejit/lisp->ejitlisp (form)
   "Translate Emacs-Lisp C forms to EjitLisp."
-  (cl-macrolet 
-      ((let (bindings &rest body)
-         `(CALL-FUNC
-           (lambda ,(mapcar 'car bindings) ,@body)
-           (list ,@(mapcar 'cadr bindings))))
-       (let* (bindings &rest body)
-         (if bindings
-             `(let (,(car bindings))
-                (let* (,@(cdr bindings))
-                  ,@body))
-             `(let () ,@body)))
-       (funcall (sym &optional args) `(CALL-FUNC ,sym ,args))
-       (if (test consq alt)
-           `(IF ,test ,consq (progn ,alt)))
-       (cond (&rest clauses)
-             )
-       (defvar (sym value &optional docstring) ;; just throw docstring away for now
-         `(setq ,sym ,value))
-       (defalias (sym func)
+  (let ((pass1 
+         (macrolet
+             ((condition-case (var form &rest handlers)
+                  `(ejit-catch-case
+                       ,var ,form
+                       ,@handlers)))
+           (macroexpand-all-locally
+            (-tree-map
+             (lambda (e) (if (eq e 'progn) 'PROGN e))
+             form)))))
+    ;; The second pass is more complete
+    (macrolet 
+        ((let (bindings &rest body)
+           `(CALL-FUN
+             (lambda ,(mapcar 'car bindings) ,@body)
+             ,@(mapcar 'cadr bindings)))
+         (let* (bindings &rest body)
+           (if bindings
+               `(let (,(car bindings))
+                  (let* (,@(cdr bindings))
+                    ,@body))
+               ;; Else
+               `(let () ,@body)))
+         (PROGN (&rest body)
+                `(lambda () ,@body))
+         (funcall (sym &rest args) `(CALL-FUN ,sym ,args))
+         (if (test consq &rest alt) `(IF ,test ,consq (PROGN ,@alt)))
+         (cond (&rest lst)
+               `(if ,(caar lst)
+                    (PROGN ,@(cdar lst))
+                    ,@(if (cdr lst)
+                          `(cond ,@(cdr lst)))))
+         (defvar (sym value &optional docstring) ;; just throw docstring away for now
+           `(setq ,sym ,value))
+         (defalias (sym func)
            `(FSET ,(cadr sym) ,func))
-       (lambda (args &rest body)
-         `(FUNCTION ,args (progn ,@body)))
-       (setq (sym val &rest args)  ;; FIXME - because of `args' we should rewrite to partition
-             `(SETQ ,sym ,val))
-       (+ (&rest lst) `(PLUS ,@lst))
-       (- (&rest lst) `(MINUS ,@lst))
-       (* (&rest lst) `(MULT ,@lst))
-       (/ (&rest lst) `(DIVIDE ,@lst))
-       (function (l-expr) `(FUNCTION ,@(cdr l-expr)))
-       (unwind-protect (form handler) `(TRYFINALLY ,form ,handler)))
+         (lambda (args &rest body)
+           `(FUNCTION ,args ,@body))
+         (setq (sym val &rest args)  ;; FIXME - because of `args' we should rewrite to partition
+           `(SETQ ,sym ,val))
+         (+ (&rest lst) `(PLUS ,@lst))
+         (- (&rest lst) `(MINUS ,@lst))
+         (* (&rest lst) `(MULT ,@lst))
+         (/ (&rest lst) `(DIVIDE ,@lst))
+         (function (l-expr) `(FUNCTION ,@(cdr l-expr)))
+         (unwind-protect (form handler) `(TRYFINALLY ,form ,handler)))
+      ;; We need to do several layers of this because some special forms
+      ;; don't expand properly
+      (macroexpand-all-locally pass1))))
+
+
+
+;;; Elisp expansion of ejit-lisp
+
+(defun ejit/ejitlisp->lisp (form)
+  "Take EjitLisp and output EmacsLisp.
+
+EjitLisp is just a representation of EmacsLisp with less special
+forms.  There is no `let' or `let*', no `progn', no `cond'.  But
+the forms it does have are all directly translateable to
+EmacsLisp.  And that's what this does."
+  (macrolet
+      ((CALL-FUN (sym &rest args)
+         (if args
+             `(funcall ,sym ,@args)
+             `(funcall ,sym)))
+       (IF (test consq &rest alt)
+           `(if ,test
+                ,consq
+                ,@alt))
+       (FUNCTION (args &rest body)`(lambda ,args ,@body))
+       (SETQ (sym val)  `(setq ,sym ,val))
+       (FSET (sym func) `(fset ,sym ,func))
+       (DIVIDE (&rest lst) `(/ ,@lst))
+       (MULT (&rest lst) `(* ,@lst))
+       (PLUS (&rest lst) `(+ ,@lst))
+       (MINUS (&rest lst) `(- ,@lst))
+       (TRYFINALLY (form handler)
+         `(unwind-protect
+               ,form
+            ,handler)))
     (macroexpand-all-locally form)))
+
+
+;;; js translation
 
 (defun ejit/print (form)
   "Print FORM as EjitLisp."
@@ -109,7 +189,7 @@ expressions is morphed into a return statement."
     (push (list (format "%S {%s}" ejit-form e)) ejit/trace-log)
     (cond
       ((listp e) (format "(%s)" (ejit/translate e)))
-      ((eq e 'CALL-FUNC)
+      ((eq e 'CALL-FUN)
        (format "(%s)(%s)"
                (if (listp (car next))
                    (ejit/translate (car next))
@@ -156,6 +236,7 @@ expressions is morphed into a return statement."
         "%s(%s)"
         (format "ejit.functions.%s" (ejit/symbol->jsname e))
         (if next (ejit/expr-map next) ""))))))
+
 
 (defvar ejit-compile-frame "var ejit = require('ejit.js');
 console.log(
@@ -263,6 +344,114 @@ is specified."
     (with-temp-file out-file (insert js))
     (when debug (find-file out-file))
     (message out-file)))
+
+
+
+;;; The side by side editor
+
+(defun ejit/read-forms ()
+  "Read all the forms from the current buffer."
+  ;; TODO - alter so it reads from regions
+  (let (all)
+    (condition-case err
+        (save-excursion
+          (goto-char (point-min))
+          (let ((form (read (current-buffer))))
+            (while form
+              (setq all (append (list form) all))
+              (setq form (read (current-buffer))))))
+      (end-of-file all)
+      (invalid-read-syntax (list :error :invalid-read-syntax))
+      (error err))))
+
+(defun ejit/pp-sexp (sexp)
+  "Make a pp version of SEXP.
+
+  (ejit/pp-sexp '(lambda (a b c) (let ((x 1)) x)))
+  =>
+\"(lambda
+    (a b c)
+  (let
+      ((x 1))
+    x))
+\""
+  (with-temp-buffer
+    (let ((bufname (buffer-name)))
+      (pp-display-expression sexp bufname)
+      (buffer-substring (point-min) (point-max)))))
+
+(defun ejit/compile-forms (output-func forms)
+  "Compile FORMS and map them over OUTPUT-FUNC."
+  (->> forms
+    (-map 'ejit/lisp->ejitlisp)
+    ;;(-map 'ejit/ejitlisp->lisp)
+    (-map output-func)))
+
+(defun ejit-compile-buf (&optional buffer out-buffer)
+  "Compile the specified BUFFER or the current-buffer.
+
+Returns the output buffer which is either OUT-BUFFER or a buffer
+derived from the source buffer."
+  ;; TODO - put the output buffer in a derived mode from emacs-lisp
+  ;; that will let us further switch to the javascript output or the
+  ;; emacs-lisp evaluated output or the javascript evaluated output
+  (interactive)
+  (let ((buf (or buffer (current-buffer)))
+        (out-buf (or out-buffer
+                     (let ((buf
+                            (get-buffer-create
+                             (format "*ejit/compile-%s*" (buffer-name)))))
+                       (prog1 buf
+                         (with-current-buffer buf
+                           (emacs-lisp-mode)
+                           (setq buffer-read-only t)))))))
+    (with-current-buffer buf
+      (let ((compiled (ejit/read-forms)))
+        (with-current-buffer out-buf
+          (let ((buffer-read-only nil))
+            (erase-buffer)
+            (goto-char (point-min))
+            (if (and (eq (car-safe compiled) :error)
+                     (eq (car-safe (cdr-safe compiled)) :invalid-read-syntax))
+                (print ";; parser error" (current-buffer))
+                ;; Else if was ok so print i
+                (condition-case err
+                    (ejit/compile-forms
+                     (lambda (form)
+                       (let ((str-form (ejit/pp-sexp form)))
+                         (goto-char (point-max))
+                         (insert str-form "\n")))
+                     (reverse compiled))
+                  (error (princ (format ";; translate error %s" err) (current-buffer))))))
+          (current-buffer))))))
+
+(defun ejit/on-change (&rest args)
+  "ARGS is the change function integers which we ignore."
+  (ejit-compile-buf))
+
+(defun ejit-pop-compile ()
+  (interactive)
+  (when (eq major-mode 'emacs-lisp-mode)
+    (unless (memq 'ejit-compile-buf after-change-functions)
+      (add-hook 'after-change-functions 'ejit/on-change nil t))
+    (let ((window (frame-selected-window)))
+      (pop-to-buffer (ejit-compile-buf))
+      (select-window window))))
+
+;; this is probably badly named - there needs to be a mode for
+;; ejit-lisp with TRY-FINALLY syntax coloured and all that... the mode
+;; defined here is like interactive-lisp-mode... it's adds stuff to
+;; emacs-lisp-mode.
+(define-minor-mode ejit-lisp-mode
+    "Allow the current Lisp file to be compiled to ejit.
+
+C-c C-z pops up an ejit compile window."
+  :keymap (let ((ejit-map (make-sparse-keymap)))
+            (define-key ejit-map (kbd "C-c C-z") 'ejit-pop-compile)
+            ejit-map))
+
+
+;;; Evaluating the javascript
 
 (defmacro cond-re (expression &rest clauses)
   "Evaluate EXPRESSION and then match regex CLAUSES against it.
